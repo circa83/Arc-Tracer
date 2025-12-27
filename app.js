@@ -14,40 +14,22 @@
   const unloadBtn = document.getElementById('unloadBtn');
   const fileInput = document.getElementById('fileInput');
 
-  // Video step size
-  const videoStepSec = document.getElementById('videoStepSec');
-  const videoStepSecVal = document.getElementById('videoStepSecVal');
+  const backBtn = document.getElementById('backBtn');
+  const playBtn = document.getElementById('playBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const stepPlayBtn = document.getElementById('stepPlayBtn');
+  const interactBtn = document.getElementById('interactBtn');
+  const snapBtn = document.getElementById('snapBtn');
+  const helpBtn = document.getElementById('helpBtn');
 
-  // Drawing slot size
+  const videoSpeed = document.getElementById('videoSpeed');
+  const videoSpeedVal = document.getElementById('videoSpeedVal');
+
   const stepSec = document.getElementById('stepSec');
   const stepSecVal = document.getElementById('stepSecVal');
 
-  const rate = document.getElementById('rate');
-  const rateVal = document.getElementById('rateVal');
-
-  const backBtn = document.getElementById('backBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const playBtn = document.getElementById('playBtn');
-  const stepPlayBtn = document.getElementById('stepPlayBtn');
-  const holdBtn = document.getElementById('holdBtn');
-  const snapToSlotBtn = document.getElementById('snapToSlotBtn');
-  const interactBtn = document.getElementById('interactBtn');
-  const helpBtn = document.getElementById('helpBtn');
-
-  const setInBtn = document.getElementById('setInBtn');
-  const setOutBtn = document.getElementById('setOutBtn');
-  const loopBtn = document.getElementById('loopBtn');
-  const loopInEl = document.getElementById('loopIn');
-  const loopOutEl = document.getElementById('loopOut');
-  const jumpInBtn = document.getElementById('jumpInBtn');
-  const jumpOutBtn = document.getElementById('jumpOutBtn');
-  const loopStatus = document.getElementById('loopStatus');
-
-  const loopBar = document.getElementById('loopBar');
-  const loopRange = document.getElementById('loopRange');
-  const loopInHandle = document.getElementById('loopInHandle');
-  const loopOutHandle = document.getElementById('loopOutHandle');
-  const loopPlayhead = document.getElementById('loopPlayhead');
+  const stepFps = document.getElementById('stepFps');
+  const stepFpsVal = document.getElementById('stepFpsVal');
 
   const videoOpacity = document.getElementById('videoOpacity');
   const videoOpacityVal = document.getElementById('videoOpacityVal');
@@ -63,7 +45,6 @@
 
   const penSize = document.getElementById('penSize');
   const penSizeVal = document.getElementById('penSizeVal');
-
   const pointSize = document.getElementById('pointSize');
   const pointSizeVal = document.getElementById('pointSizeVal');
 
@@ -80,20 +61,30 @@
   const ghostMax = document.getElementById('ghostMax');
   const ghostMaxVal = document.getElementById('ghostMaxVal');
 
+  const setInBtn = document.getElementById('setInBtn');
+  const setOutBtn = document.getElementById('setOutBtn');
+  const loopBtn = document.getElementById('loopBtn');
+  const loopInEl = document.getElementById('loopIn');
+  const loopOutEl = document.getElementById('loopOut');
+  const jumpInBtn = document.getElementById('jumpInBtn');
+  const jumpOutBtn = document.getElementById('jumpOutBtn');
+  const loopStatus = document.getElementById('loopStatus');
+
+  const loopBar = document.getElementById('loopBar');
+  const loopRange = document.getElementById('loopRange');
+  const loopInHandle = document.getElementById('loopInHandle');
+  const loopOutHandle = document.getElementById('loopOutHandle');
+  const loopPlayhead = document.getElementById('loopPlayhead');
+
   const timeReadout = document.getElementById('timeReadout');
+  const statusReadout = document.getElementById('statusReadout');
   const modeBadge = document.getElementById('modeBadge');
 
-  // Mode
+  // Mode + YouTube
   const Mode = { NONE:'none', YT:'youtube', LOCAL:'local' };
   let mode = Mode.NONE;
-
-  // YouTube
   let ytPlayer = null;
   let ytReady = false;
-
-  // Hold
-  let holdEnabled = false;
-  let holdTime = 0;
 
   // Interact mode (canvas click-through)
   let interactEnabled = false;
@@ -103,9 +94,12 @@
   let loopIn = 0;
   let loopOut = 0;
 
-  // Step-play (discrete stepping playback)
+  // Playback modes
+  // Native = actual video play (continuous).
+  // Step-play = discrete seek jumps at Step FPS.
   let stepPlayEnabled = false;
-  let stepPlayTimer = null;
+  let stepTimer = null;
+  let lastStepMs = 0;
 
   // Drawing state
   let drawEnabled = true;
@@ -113,45 +107,18 @@
   let isDrawing = false;
   let currentStroke = null;
 
-  // slotKey -> {points, strokes}
+  // stepKey -> {points, strokes}
   const slots = new Map();
 
   // Utils
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   const roundTo = (n, step) => Math.round(n / step) * step;
 
-  function getVideoStepSec(){ return Number(videoStepSec.value); }
-  function getStepSec(){ return Number(stepSec.value); } // drawing slot size
+  function getStepSec(){ return Number(stepSec.value); }
+  function getStepFps(){ return Number(stepFps.value); }
+  function getVideoSpeed(){ return Number(videoSpeed.value); }
   function getPointRadius(){ return Number(pointSize.value); }
 
-  // When we "jump to loop out", land slightly inside the loop so enforceLoop doesn't immediately snap to loopIn
-  function loopOutSafe(){
-    if (!loopValid()) return loopOut;
-    const eps = Math.min(0.02, Math.max(0.002, getVideoStepSec() * 0.05)); // 0.2%–2% of a step
-    return Math.max(loopIn, loopOut - eps);
-  }
-
-  function slotTimeFromT(t){
-    const s = getStepSec();
-    const st = roundTo(Math.max(0,t), s);
-    return Number(st.toFixed(3));
-  }
-  function slotKey(st){ return st.toFixed(3); }
-  function ensureSlot(st){
-    const k = slotKey(st);
-    if (!slots.has(k)) slots.set(k, { points: [], strokes: [] });
-    return slots.get(k);
-  }
-  function viewerPointToNorm(clientX, clientY){
-    const r = viewer.getBoundingClientRect();
-    return { x: clamp01((clientX - r.left) / r.width), y: clamp01((clientY - r.top) / r.height) };
-  }
-  function normToViewerPx(p){
-    const r = viewer.getBoundingClientRect();
-    return { x: p.x * r.width, y: p.y * r.height };
-  }
-
-  // Playback abstraction
   function isPlayable(){
     if (mode === Mode.YT) return ytReady && ytPlayer;
     if (mode === Mode.LOCAL) return isFinite(video.duration);
@@ -167,21 +134,31 @@
     if (mode === Mode.LOCAL) return video.duration || 0;
     return 0;
   }
-  function isPlayingNow(){
-    if (stepPlayTimer) return true; // step-play counts as "playing"
-    if (mode === Mode.YT && ytReady && ytPlayer) return ytPlayer.getPlayerState() === 1;
-    if (mode === Mode.LOCAL) return !video.paused;
-    return false;
-  }
-  function setPlaybackRate(v){
-    if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(v);
-    if (mode === Mode.LOCAL) video.playbackRate = v;
-  }
   function seekTo(t){
     const dur = getDuration();
     const nt = Math.max(0, Math.min(dur || t, t));
     if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.seekTo(nt, true);
     if (mode === Mode.LOCAL) video.currentTime = nt;
+  }
+
+  function isNativePlaying(){
+    if (!isPlayable()) return false;
+    if (mode === Mode.LOCAL) return !video.paused;
+    if (mode === Mode.YT && ytReady && ytPlayer) return ytPlayer.getPlayerState() === 1;
+    return false;
+  }
+
+  function pauseNative(){
+    if (!isPlayable()) return;
+    if (mode === Mode.LOCAL) video.pause();
+    if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.pauseVideo();
+  }
+  function playNative(){
+    if (!isPlayable()) return;
+    // If native play starts, step-play must stop.
+    stopStepPlay();
+    if (mode === Mode.LOCAL) video.play();
+    if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.playVideo();
   }
 
   // Loop helpers
@@ -194,30 +171,26 @@
     loopOutEl.value = loopOut.toFixed(2);
   }
   function loopValid(){ return loopOut > loopIn + 0.001; }
+  function loopOutSafe(){
+    if (!loopValid()) return loopOut;
+    const eps = Math.min(0.02, Math.max(0.002, getStepSec() * 0.05));
+    return Math.max(loopIn, loopOut - eps);
+  }
   function clampToLoop(t){
     if (!loopEnabled || !loopValid()) return t;
     if (t < loopIn) return loopIn;
-    if (t > loopOut) return loopOutSafe();
-    // if you land exactly on loopOut, pull inside the loop
-    if (Math.abs(t - loopOut) < 0.0005) return loopOutSafe();
+    if (t >= loopOut) return loopOutSafe();
     return t;
-  }
-  function updateLoopStatus(){
-    if (!loopEnabled) { loopStatus.textContent = 'Loop inactive.'; return; }
-    if (!loopValid()) { loopStatus.textContent = 'Loop ON but invalid (Out must be > In).'; return; }
-    loopStatus.textContent = `Looping: ${loopIn.toFixed(2)}s → ${loopOut.toFixed(2)}s`;
   }
   function enforceLoop(){
     if (!loopEnabled || !loopValid() || !isPlayable()) return;
     const t = getCurrentTime();
-    // only enforce when truly beyond loopOut (not when we intentionally set a "safe" just-inside time)
     if (t >= loopOut - 0.0005){
       seekTo(loopIn);
-      if (holdEnabled && mode === Mode.YT) holdTime = loopIn;
     }
   }
 
-  // Loop slider helpers
+  // UI Loop slider mapping
   function timeToPct(t){
     const d = getDuration() || 0;
     if (d <= 0) return 0;
@@ -239,7 +212,6 @@
     const tP = timeToPct(getCurrentTime());
 
     const w = loopBar.getBoundingClientRect().width || 1;
-
     const inX = inP * w;
     const outX = outP * w;
     const tX = tP * w;
@@ -254,7 +226,6 @@
 
     loopPlayhead.style.left = `${tX}px`;
   }
-
   function pointerPctFromEvent(e){
     const r = loopBar.getBoundingClientRect();
     return Math.max(0, Math.min(1, (e.clientX - r.left) / (r.width || 1)));
@@ -268,56 +239,136 @@
       const t = pctToTime(p);
       if (which === 'in') loopIn = t;
       if (which === 'out') loopOut = t;
-
       loopInEl.value = loopIn.toFixed(2);
       loopOutEl.value = loopOut.toFixed(2);
-
-      if (loopEnabled && loopValid()){
-        const ct = clampToLoop(getCurrentTime());
-        seekTo(ct);
-        if (holdEnabled && mode === Mode.YT){ holdTime = ct; applyHoldFreeze(); }
-      }
-      updateButtons();
       updateLoopSliderUI();
+      updateLoopStatus();
+      if (loopEnabled && loopValid()){
+        seekTo(clampToLoop(getCurrentTime()));
+      }
     };
-
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   }
   loopInHandle.addEventListener('pointerdown', (e) => beginDrag('in', e));
   loopOutHandle.addEventListener('pointerdown', (e) => beginDrag('out', e));
-
   loopBar.addEventListener('pointerdown', (e) => {
-    const p = pointerPctFromEvent(e);
-    const t = pctToTime(p);
-    const target = (loopEnabled && loopValid()) ? clampToLoop(t) : t;
-    seekTo(target);
-    if (holdEnabled && mode === Mode.YT){
-      holdTime = getCurrentTime();
-      applyHoldFreeze();
-    }
+    const t = pctToTime(pointerPctFromEvent(e));
+    seekTo(loopEnabled && loopValid() ? clampToLoop(t) : t);
     updateLoopSliderUI();
   });
 
-  // Hold (stable freeze)
-  function applyHoldFreeze(){
-    if (mode !== Mode.YT || !ytReady || !ytPlayer) return;
-    ytPlayer.pauseVideo();
-    ytPlayer.seekTo(holdTime, true);
+  function updateLoopStatus(){
+    if (!loopEnabled) { loopStatus.textContent = 'Loop inactive.'; return; }
+    if (!loopValid()) { loopStatus.textContent = 'Loop ON but invalid (Out must be > In).'; return; }
+    loopStatus.textContent = `Looping: ${loopIn.toFixed(2)}s → ${loopOut.toFixed(2)}s`;
   }
-  function setHoldEnabled(on){
-    if (mode !== Mode.YT || !isPlayable()) on = false;
-    holdEnabled = on;
-    if (holdEnabled){
-      holdTime = clampToLoop(getCurrentTime());
-      applyHoldFreeze();
+
+  // Unified step grid for drawings
+  function stepTimeFromT(t){
+    const s = getStepSec();
+    const st = roundTo(Math.max(0, t), s);
+    return Number(st.toFixed(3));
+  }
+  function slotKey(st){ return st.toFixed(3); }
+  function ensureSlot(st){
+    const k = slotKey(st);
+    if (!slots.has(k)) slots.set(k, { points: [], strokes: [] });
+    return slots.get(k);
+  }
+  function currentSlot(){ return stepTimeFromT(getCurrentTime()); }
+
+  // Step / Seek controls (manual)
+  function stepAdvance(delta){
+    if (!isPlayable()) return;
+
+    // Manual step should stop BOTH play modes, then seek.
+    stopStepPlay();
+    pauseNative();
+
+    const t = getCurrentTime();
+    let nt = t + delta;
+    const eps = 0.002;
+
+    if (loopEnabled && loopValid()){
+      if (delta < 0 && t <= loopIn + eps) nt = loopOutSafe();
+      else if (delta > 0 && t >= loopOut - eps) nt = loopIn;
+      else {
+        if (nt < loopIn) nt = loopOutSafe();
+        if (nt >= loopOut) nt = loopIn;
+      }
+      nt = clampToLoop(nt);
+    } else {
+      nt = Math.max(0, Math.min(getDuration() || nt, nt));
     }
-    updateButtons();
+
+    seekTo(nt);
+    render();
+    updateLoopSliderUI();
+    updateStatus();
+  }
+
+  // Step play (discrete stepping at Step FPS)
+  function startStepPlay(){
+    if (!isPlayable()) return;
+    // Step play owns the timeline: native playback must be paused.
+    pauseNative();
+
+    stepPlayEnabled = true;
+    stepPlayBtn.textContent = 'Step Play: On';
+    lastStepMs = performance.now();
+
+    if (stepTimer) cancelAnimationFrame(stepTimer);
+
+    const tick = (now) => {
+      if (!stepPlayEnabled) return;
+
+      const intervalMs = 1000 / Math.max(1, getStepFps()); // frame-rate style
+      if (now - lastStepMs >= intervalMs){
+        lastStepMs = now;
+        // advance exactly one step per tick
+        const s = getStepSec();
+        const t = getCurrentTime();
+        let nt = t + s;
+
+        if (loopEnabled && loopValid()){
+          if (t >= loopOut - 0.0005) nt = loopIn;
+          if (nt >= loopOut) nt = loopIn;
+          nt = clampToLoop(nt);
+        } else {
+          nt = Math.max(0, Math.min(getDuration() || nt, nt));
+        }
+
+        seekTo(nt);
+        render();
+        updateLoopSliderUI();
+      }
+
+      stepTimer = requestAnimationFrame(tick);
+    };
+
+    stepTimer = requestAnimationFrame(tick);
+    updateStatus();
+  }
+
+  function stopStepPlay(){
+    stepPlayEnabled = false;
+    stepPlayBtn.textContent = 'Step Play: Off';
+    if (stepTimer){
+      cancelAnimationFrame(stepTimer);
+      stepTimer = null;
+    }
+    updateStatus();
+  }
+
+  function toggleStepPlay(){
+    if (!isPlayable()) return;
+    if (stepPlayEnabled) stopStepPlay();
+    else startStepPlay();
   }
 
   // Interact mode
@@ -328,104 +379,31 @@
     toggleDrawBtn.textContent = `Draw: ${(!interactEnabled && drawEnabled) ? 'On' : 'Off'}`;
   }
 
-  // Step-play
-  function stopStepPlay(){
-    if (stepPlayTimer){
-      clearInterval(stepPlayTimer);
-      stepPlayTimer = null;
-    }
-    updateButtons();
-  }
-  function startStepPlay(){
-    if (!isPlayable()) return;
-    // Stepped playback is driven by discrete seeks; keep native media paused.
-    if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.pauseVideo();
-    if (mode === Mode.LOCAL) video.pause();
-
-    setHoldEnabled(false);
-    stopStepPlay();
-
-    const intervalMs = Math.max(10, Math.round((getVideoStepSec() * 1000) / Math.max(0.05, Number(rate.value))));
-    stepPlayTimer = setInterval(() => {
-      stepAdvance(+getVideoStepSec());
-    }, intervalMs);
-
-    updateButtons();
-  }
-  function toggleStepPlay(){
-    stepPlayEnabled = !stepPlayEnabled;
-    if (stepPlayEnabled) startStepPlay();
-    else stopStepPlay();
-    updateButtons();
+  function updateStatus(){
+    const v = isNativePlaying() ? 'Playing' : 'Paused';
+    const sp = stepPlayEnabled ? 'On' : 'Off';
+    statusReadout.textContent = `Video: ${v} · Step Play: ${sp}`;
+    playBtn.textContent = isNativePlaying() ? 'Pause' : 'Play';
   }
 
-  // UI helpers
-  function setMode(next){
-    // switching modes should stop step-play
-    stepPlayEnabled = false;
-    stopStepPlay();
-
-    if (mode === Mode.YT && next !== Mode.YT) holdEnabled = false;
-    mode = next;
-
-    if (mode === Mode.YT){
-      ytWrap.style.display = 'block';
-      ytDimOverlay.style.display = 'block';
-      video.style.display = 'none';
-      modeBadge.textContent = 'Mode: YouTube';
-    } else if (mode === Mode.LOCAL){
-      ytWrap.style.display = 'none';
-      ytDimOverlay.style.display = 'none';
-      video.style.display = 'block';
-      modeBadge.textContent = 'Mode: Local Video';
-    } else {
-      ytWrap.style.display = 'none';
-      ytDimOverlay.style.display = 'none';
-      video.style.display = 'none';
-      modeBadge.textContent = 'Mode: None';
-    }
-    updateButtons();
-    render();
-    updateLoopSliderUI();
-  }
-
-  function updateButtons(){
-    playBtn.textContent = isPlayingNow() ? 'Pause' : 'Play';
-    stepPlayBtn.textContent = `Step Play: ${stepPlayEnabled ? 'On' : 'Off'}`;
-    holdBtn.textContent = `Hold: ${holdEnabled ? 'On' : 'Off'}`;
-    loopBtn.textContent = `Loop: ${loopEnabled ? 'On' : 'Off'}`;
-    updateLoopStatus();
-  }
-
+  // Bind UI
   function bindRange(rangeEl, labelEl, fmt=(v)=>v){
     const upd = () => labelEl.textContent = fmt(rangeEl.value);
     rangeEl.addEventListener('input', () => {
       upd();
-      // step-play timing depends on video step and rate
-      if (rangeEl === videoStepSec || rangeEl === rate){
-        if (stepPlayEnabled){
-          startStepPlay(); // restart timer with new interval
-        }
-      }
+      // If step FPS changes while stepping, it just affects next tick rate automatically.
       render();
       updateLoopSliderUI();
+      updateStatus();
     });
     upd();
   }
 
-  bindRange(videoStepSec, videoStepSecVal, v => Number(v).toFixed(2));
+  bindRange(videoSpeed, videoSpeedVal, v => Number(v).toFixed(2));
   bindRange(stepSec, stepSecVal, v => Number(v).toFixed(2));
-  bindRange(rate, rateVal, v => Number(v).toFixed(2));
-  rate.addEventListener('input', () => setPlaybackRate(Number(rate.value)));
-
+  bindRange(stepFps, stepFpsVal, v => String(v));
   bindRange(videoOpacity, videoOpacityVal, v => Number(v).toFixed(2));
-  videoOpacity.addEventListener('input', () => video.style.opacity = String(videoOpacity.value));
-  video.style.opacity = String(videoOpacity.value);
-
   bindRange(ytDim, ytDimVal, v => Number(v).toFixed(2));
-  ytDim.addEventListener('input', () => ytDimOverlay.style.opacity = String(ytDim.value));
-  ytDimOverlay.style.opacity = String(ytDim.value);
-
   bindRange(penSize, penSizeVal, v => String(v));
   bindRange(pointSize, pointSizeVal, v => String(v));
   bindRange(onionPrev, onionPrevVal, v => String(v));
@@ -433,13 +411,10 @@
   bindRange(falloff, falloffVal, v => Number(v).toFixed(2));
   bindRange(ghostMax, ghostMaxVal, v => Number(v).toFixed(2));
 
-  const bindColor = (el, labelEl) => {
-    const upd = () => labelEl.textContent = el.value.toLowerCase();
-    el.addEventListener('input', () => { upd(); render(); });
-    upd();
-  };
-  bindColor(prevColor, prevColorVal);
-  bindColor(nextColor, nextColorVal);
+  videoOpacity.addEventListener('input', () => video.style.opacity = String(videoOpacity.value));
+  ytDim.addEventListener('input', () => ytDimOverlay.style.opacity = String(ytDim.value));
+  video.style.opacity = String(videoOpacity.value);
+  ytDimOverlay.style.opacity = String(ytDim.value);
 
   // Tools
   function setTool(nextTool){
@@ -459,116 +434,58 @@
     setDrawEnabled(!drawEnabled);
   });
 
-  // Playback controls
-  function playNative(){
-    if (!isPlayable()) return;
-    setHoldEnabled(false);
-    if (mode === Mode.YT) ytPlayer.playVideo();
-    if (mode === Mode.LOCAL) video.play();
-    updateButtons();
-  }
-  function pauseNative(){
-    if (!isPlayable()) return;
-    if (mode === Mode.YT) ytPlayer.pauseVideo();
-    if (mode === Mode.LOCAL) video.pause();
-    updateButtons();
-  }
+  // Playback buttons
+  backBtn.addEventListener('click', () => stepAdvance(-getStepSec()));
+  nextBtn.addEventListener('click', () => stepAdvance(getStepSec()));
 
-  function play(){
+  playBtn.addEventListener('click', () => {
     if (!isPlayable()) return;
-    if (stepPlayEnabled){
-      startStepPlay();
-      return;
-    }
-    playNative();
-  }
-  function pause(){
-    stopStepPlay();
-    pauseNative();
-  }
-  function togglePlay(){
-    if (!isPlayable()) return;
-    if (isPlayingNow()) pause();
-    else play();
-  }
-
-  // Advance without forcing pause (used by step-play timer)
-  function stepAdvance(delta){
-    if (!isPlayable()) return;
-
-    const t = getCurrentTime();
-    let nt = t + delta;
-    const eps = 0.002;
-
-    if (loopEnabled && loopValid()){
-      if (delta < 0 && t <= loopIn + eps){
-        nt = loopOutSafe();
-      } else if (delta > 0 && t >= loopOut - eps){
-        nt = loopIn;
-      } else {
-        if (nt < loopIn) nt = loopOutSafe();
-        if (nt > loopOut) nt = loopIn;
-        if (Math.abs(nt - loopOut) < 0.0005) nt = loopOutSafe();
-      }
+    if (isNativePlaying()){
+      pauseNative();
     } else {
-      nt = Math.max(0, Math.min(getDuration() || nt, nt));
+      // Native play takes control: stop step-play first, then play.
+      stopStepPlay();
+      // Apply speed to native playback only.
+      if (mode === Mode.LOCAL) video.playbackRate = getVideoSpeed();
+      if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(getVideoSpeed());
+      playNative();
     }
-
-    seekTo(nt);
-
-    if (holdEnabled && mode === Mode.YT){
-      holdTime = nt;
-      applyHoldFreeze();
-    }
-
-    render();
-    updateLoopSliderUI();
-  }
-
-  // Manual step (always pauses)
-  function stepBySeconds(delta){
-    if (!isPlayable()) return;
-    pause();
-    stepAdvance(delta);
-  }
-
-  function snapToSlot(){
-    if (!isPlayable()) return;
-    pause();
-    const st = slotTimeFromT(getCurrentTime());
-    const target = (loopEnabled && loopValid()) ? clampToLoop(st) : st;
-    seekTo(target);
-    if (holdEnabled && mode === Mode.YT){
-      holdTime = target;
-      applyHoldFreeze();
-    }
-    render();
-    updateLoopSliderUI();
-  }
-
-  backBtn.addEventListener('click', () => stepBySeconds(-getVideoStepSec()));
-  nextBtn.addEventListener('click', () => stepBySeconds(getVideoStepSec()));
-  playBtn.addEventListener('click', togglePlay);
+    updateStatus();
+  });
 
   stepPlayBtn.addEventListener('click', toggleStepPlay);
-
-  holdBtn.addEventListener('click', () => setHoldEnabled(!holdEnabled));
-  snapToSlotBtn.addEventListener('click', snapToSlot);
-
   interactBtn.addEventListener('click', () => setInteractEnabled(!interactEnabled));
+
+  // When videoSpeed changes, apply it to native playback immediately (if playing)
+  videoSpeed.addEventListener('input', () => {
+    if (!isPlayable()) return;
+    if (mode === Mode.LOCAL) video.playbackRate = getVideoSpeed();
+    if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(getVideoSpeed());
+  });
+
+  // Snap to step
+  snapBtn.addEventListener('click', () => {
+    if (!isPlayable()) return;
+    stopStepPlay();
+    pauseNative();
+    const st = stepTimeFromT(getCurrentTime());
+    seekTo(loopEnabled && loopValid() ? clampToLoop(st) : st);
+    render();
+    updateLoopSliderUI();
+    updateStatus();
+  });
 
   helpBtn.addEventListener('click', () => {
     alert(
+      "Two playback modes:\n\n" +
+      "Play/Pause:\n" +
+      "• Native continuous video playback.\n" +
+      "• Controlled by Video Speed.\n\n" +
       "Step Play:\n" +
-      "• Plays by hopping forward in fixed Video step sizes (discrete stepping playback).\n" +
-      "• Playback rate affects how fast those steps happen.\n\n" +
-      "Loop stepping:\n" +
-      "• Forward past Out wraps to In.\n" +
-      "• Back past In wraps to just-inside Out (so it doesn't snap back instantly).\n\n" +
-      "Snap to Slot:\n" +
-      "• Moves video time to the nearest drawing-slot grid.\n\n" +
-      "Interact Mode:\n" +
-      "• Disables drawing so you can click inside YouTube to close overlays."
+      "• Discrete 'seek-jump' playback.\n" +
+      "• Step Size = how far each jump goes.\n" +
+      "• Step FPS = how many jumps per second (like frame rate).\n\n" +
+      "They are mutually exclusive: starting one stops the other."
     );
   });
 
@@ -583,124 +500,72 @@
       loopOut = Math.max(0, Math.min(d, loopOut));
       syncLoopInputs();
     }
+    updateLoopStatus();
+    updateLoopSliderUI();
 
     if (loopEnabled && loopValid() && isPlayable()){
-      const t = clampToLoop(getCurrentTime());
-      seekTo(t);
-      if (holdEnabled && mode === Mode.YT){
-        holdTime = t;
-        applyHoldFreeze();
-      }
+      seekTo(clampToLoop(getCurrentTime()));
     }
-    updateButtons();
-    render();
-    updateLoopSliderUI();
   }
-
   setInBtn.addEventListener('click', () => {
     if (!isPlayable()) return;
     loopIn = getCurrentTime();
     syncLoopInputs();
-    updateButtons();
+    updateLoopStatus();
     updateLoopSliderUI();
   });
-
   setOutBtn.addEventListener('click', () => {
     if (!isPlayable()) return;
     loopOut = getCurrentTime();
     syncLoopInputs();
-    updateButtons();
+    updateLoopStatus();
     updateLoopSliderUI();
   });
-
-  loopBtn.addEventListener('click', () => setLoopEnabled(!loopEnabled));
-
-  loopInEl.addEventListener('change', () => { parseLoopInputs(); updateButtons(); render(); updateLoopSliderUI(); });
-  loopOutEl.addEventListener('change', () => { parseLoopInputs(); updateButtons(); render(); updateLoopSliderUI(); });
-
-  jumpInBtn.addEventListener('click', () => {
-    parseLoopInputs();
-    pause();
-    seekTo(loopIn);
-    if (holdEnabled && mode === Mode.YT){
-      holdTime = loopIn;
-      applyHoldFreeze();
-    }
-    render();
-    updateLoopSliderUI();
+  loopBtn.addEventListener('click', () => {
+    setLoopEnabled(!loopEnabled);
+    loopBtn.textContent = `Loop: ${loopEnabled ? 'On' : 'Off'}`;
   });
+  loopInEl.addEventListener('change', () => { parseLoopInputs(); updateLoopStatus(); updateLoopSliderUI(); });
+  loopOutEl.addEventListener('change', () => { parseLoopInputs(); updateLoopStatus(); updateLoopSliderUI(); });
+  jumpInBtn.addEventListener('click', () => { parseLoopInputs(); seekTo(loopIn); updateLoopSliderUI(); });
+  jumpOutBtn.addEventListener('click', () => { parseLoopInputs(); seekTo(loopOutSafe()); updateLoopSliderUI(); });
 
-  jumpOutBtn.addEventListener('click', () => {
-    parseLoopInputs();
-    pause();
-    seekTo(loopOutSafe());
-    if (holdEnabled && mode === Mode.YT){
-      holdTime = loopOutSafe();
-      applyHoldFreeze();
-    }
-    render();
-    updateLoopSliderUI();
-  });
-
-  // Undo/Clear current slot
-  function currentSlot(){ return slotTimeFromT(getCurrentTime()); }
-
-  undoBtn.addEventListener('click', () => {
-    if (!isPlayable()) return;
-    const st = currentSlot();
-    const data = slots.get(slotKey(st));
-    if (!data) return;
-    if (data.strokes.length) data.strokes.pop();
-    else if (data.points.length) data.points.pop();
-    render();
-  });
-
-  clearBtn.addEventListener('click', () => {
-    if (!isPlayable()) return;
-    slots.delete(slotKey(currentSlot()));
-    render();
-  });
-
-  clearAllBtn.addEventListener('click', () => {
-    slots.clear();
-    render();
-  });
-
-  // Onion alpha
+  // Drawing + onion skin
   function alphaForDistance(dist){
     const base = Number(ghostMax.value);
     const f = Number(falloff.value);
-    const a = base * Math.pow(f, dist - 1);
-    return Math.max(0, Math.min(1, a));
+    return Math.max(0, Math.min(1, base * Math.pow(f, dist - 1)));
+  }
+  function normToViewerPx(p){
+    const r = viewer.getBoundingClientRect();
+    return { x: p.x * r.width, y: p.y * r.height };
+  }
+  function viewerPointToNorm(clientX, clientY){
+    const r = viewer.getBoundingClientRect();
+    return { x: clamp01((clientX - r.left) / r.width), y: clamp01((clientY - r.top) / r.height) };
   }
 
-  // Drawing render
   function drawPoint(p, alpha, colorHex){
     if (alpha <= 0.001) return;
     const px = normToViewerPx(p);
     const radius = getPointRadius();
 
     ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = alpha;
-
     ctx.beginPath();
     ctx.arc(px.x, px.y, radius, 0, Math.PI * 2);
     ctx.fillStyle = colorHex;
     ctx.fill();
-
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(0,0,0,1)';
     ctx.stroke();
     ctx.restore();
   }
-
   function drawStroke(stroke, alpha, colorHex){
     if (alpha <= 0.001) return;
     if (!stroke.pts || stroke.pts.length < 2) return;
 
     ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = alpha;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -719,7 +584,6 @@
     ctx.lineWidth = Math.max(1, stroke.size - 1);
     ctx.strokeStyle = 'rgba(0,0,0,1)';
     ctx.stroke();
-
     ctx.restore();
   }
 
@@ -728,8 +592,8 @@
     ctx.clearRect(0,0,r.width,r.height);
 
     const t = getCurrentTime();
-    const st = slotTimeFromT(t);
-    timeReadout.textContent = `t=${t.toFixed(3)}s · slot=${st.toFixed(3)}s`;
+    const st = stepTimeFromT(t);
+    timeReadout.textContent = `t=${t.toFixed(3)}s · step=${st.toFixed(3)}s`;
 
     if (!isPlayable()) return;
 
@@ -819,6 +683,28 @@
   canvas.addEventListener('pointerup', () => { if (tool === 'pen' && !interactEnabled) commitStroke(); });
   canvas.addEventListener('pointercancel', () => { if (tool === 'pen' && !interactEnabled) commitStroke(); });
 
+  // Undo/Clear
+  undoBtn.addEventListener('click', () => {
+    if (!isPlayable()) return;
+    const st = currentSlot();
+    const data = slots.get(slotKey(st));
+    if (!data) return;
+    if (data.strokes.length) data.strokes.pop();
+    else if (data.points.length) data.points.pop();
+    render();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (!isPlayable()) return;
+    slots.delete(slotKey(currentSlot()));
+    render();
+  });
+
+  clearAllBtn.addEventListener('click', () => {
+    slots.clear();
+    render();
+  });
+
   // Resize canvas
   function resizeCanvas(){
     const rect = viewer.getBoundingClientRect();
@@ -831,14 +717,14 @@
   }
   new ResizeObserver(resizeCanvas).observe(viewer);
 
-  // HARD-BIND HOTKEYS (capture phase)
+  // Hotkeys (hard-bound)
   window.addEventListener('keydown', (e) => {
     const t = e.target;
     const isTypingField =
       t &&
       ((t.tagName === 'TEXTAREA') ||
-       (t.tagName === 'INPUT' && ['text','search','url','email','number','password'].includes(t.type)) ||
-       t.isContentEditable);
+        (t.tagName === 'INPUT' && ['text','search','url','email','number','password'].includes(t.type)) ||
+        t.isContentEditable);
 
     if (isTypingField) return;
 
@@ -847,28 +733,58 @@
       e.stopPropagation();
     }
 
-    if (e.code === 'KeyI'){
-      setInteractEnabled(!interactEnabled);
-      return;
-    }
-
+    if (e.code === 'KeyI'){ setInteractEnabled(!interactEnabled); return; }
     if (e.code === 'Space'){
-      togglePlay();
+      // Space toggles NATIVE play (not step-play)
+      if (isNativePlaying()) pauseNative();
+      else {
+        stopStepPlay();
+        if (mode === Mode.LOCAL) video.playbackRate = getVideoSpeed();
+        if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(getVideoSpeed());
+        playNative();
+      }
+      updateStatus();
       return;
     }
 
     if (e.code === 'ArrowLeft'){
       const mult = e.shiftKey ? 4 : 1;
-      stepBySeconds(-getVideoStepSec() * mult);
+      stepAdvance(-getStepSec() * mult);
       return;
     }
-
     if (e.code === 'ArrowRight'){
       const mult = e.shiftKey ? 4 : 1;
-      stepBySeconds(getVideoStepSec() * mult);
+      stepAdvance(getStepSec() * mult);
       return;
     }
   }, true);
+
+  // Mode switching
+  function setMode(next){
+    stopStepPlay();
+    pauseNative();
+    mode = next;
+
+    if (mode === Mode.YT){
+      ytWrap.style.display = 'block';
+      ytDimOverlay.style.display = 'block';
+      video.style.display = 'none';
+      modeBadge.textContent = 'Mode: YouTube';
+    } else if (mode === Mode.LOCAL){
+      ytWrap.style.display = 'none';
+      ytDimOverlay.style.display = 'none';
+      video.style.display = 'block';
+      modeBadge.textContent = 'Mode: Local Video';
+    } else {
+      ytWrap.style.display = 'none';
+      ytDimOverlay.style.display = 'none';
+      video.style.display = 'none';
+      modeBadge.textContent = 'Mode: None';
+    }
+    updateStatus();
+    render();
+    updateLoopSliderUI();
+  }
 
   // Local file
   fileInput.addEventListener('change', () => {
@@ -877,40 +793,47 @@
 
     if (ytPlayer && ytReady) ytPlayer.stopVideo();
     ytReady = false;
-    setHoldEnabled(false);
 
-    stepPlayEnabled = false;
     stopStepPlay();
-
     slots.clear();
+
     const url = URL.createObjectURL(file);
     video.src = url;
     video.load();
     video.pause();
     video.currentTime = 0;
+    video.playbackRate = getVideoSpeed();
 
-    loopIn = 0;
-    loopOut = 0;
-    loopEnabled = false;
+    loopIn = 0; loopOut = 0; loopEnabled = false;
     syncLoopInputs();
-    updateButtons();
+    loopBtn.textContent = 'Loop: Off';
+    updateLoopStatus();
 
     setMode(Mode.LOCAL);
-    setPlaybackRate(Number(rate.value));
-    render();
+  });
+
+  // Local loop enforcement
+  video.addEventListener('timeupdate', () => { enforceLoop(); updateLoopSliderUI(); render(); updateStatus(); });
+  video.addEventListener('loadedmetadata', () => {
+    loopIn = 0;
+    loopOut = video.duration || 0;
+    loopEnabled = false;
+    syncLoopInputs();
+    loopBtn.textContent = 'Loop: Off';
+    updateLoopStatus();
+    video.playbackRate = getVideoSpeed();
     updateLoopSliderUI();
+    render();
+    updateStatus();
   });
 
   // Unload
   unloadBtn.addEventListener('click', () => {
-    slots.clear();
-    setHoldEnabled(false);
-
-    stepPlayEnabled = false;
     stopStepPlay();
-
+    slots.clear();
     loopEnabled = false;
-    updateButtons();
+    loopBtn.textContent = 'Loop: Off';
+    updateLoopStatus();
 
     video.pause();
     video.removeAttribute('src');
@@ -919,24 +842,9 @@
     if (ytPlayer && ytReady) ytPlayer.stopVideo();
 
     setMode(Mode.NONE);
-    render();
-    updateLoopSliderUI();
   });
 
-  // Local time updates + loop
-  video.addEventListener('timeupdate', () => { enforceLoop(); render(); updateLoopSliderUI(); });
-  video.addEventListener('loadedmetadata', () => {
-    setPlaybackRate(Number(rate.value));
-    loopIn = 0;
-    loopOut = video.duration || 0;
-    loopEnabled = false;
-    syncLoopInputs();
-    updateButtons();
-    render();
-    updateLoopSliderUI();
-  });
-
-  // YouTube loading
+  // YouTube
   function extractYouTubeId(input){
     const s = (input || '').trim();
     if (!s) return null;
@@ -970,16 +878,14 @@
 
     await ensureYouTubeApi();
 
+    stopStepPlay();
+    slots.clear();
+    ytReady = false;
+
+    // clear local
     video.pause();
     video.removeAttribute('src');
     video.load();
-
-    slots.clear();
-    ytReady = false;
-    setHoldEnabled(false);
-
-    stepPlayEnabled = false;
-    stopStepPlay();
 
     setMode(Mode.YT);
 
@@ -999,61 +905,61 @@
       events: {
         onReady: () => {
           ytReady = true;
-          setPlaybackRate(Number(rate.value));
 
           loopIn = 0;
           loopOut = ytPlayer.getDuration() || 0;
           loopEnabled = false;
           syncLoopInputs();
-          updateButtons();
+          loopBtn.textContent = 'Loop: Off';
+          updateLoopStatus();
+
+          // Set native speed default
+          ytPlayer.setPlaybackRate(getVideoSpeed());
 
           ytPlayer.seekTo(0, true);
           ytPlayer.pauseVideo();
-          render();
+
           updateLoopSliderUI();
+          render();
+          updateStatus();
         },
-        onStateChange: () => { updateButtons(); }
+        onStateChange: () => {
+          // Keep loop enforcement for native play via RAF
+          updateStatus();
+        }
       }
     });
   }
 
   loadYtBtn.addEventListener('click', () => loadYouTube(ytUrl.value));
 
-  // RAF loop (YT loop enforcement + hold stabilization + slider playhead)
+  // RAF loop for YouTube loop enforcement + UI updates
   function rafLoop(){
     if (mode === Mode.YT && isPlayable()){
       enforceLoop();
-      if (holdEnabled){
-        const t = getCurrentTime();
-        if (Math.abs(t - holdTime) > 0.02){
-          applyHoldFreeze();
-        }
-      }
+      updateLoopSliderUI();
     }
     render();
-    updateLoopSliderUI();
+    updateStatus();
     requestAnimationFrame(rafLoop);
   }
   requestAnimationFrame(rafLoop);
 
-  // View defaults
-  function bindRangeSimple(rangeEl, on){
-    rangeEl.addEventListener('input', on);
-    on();
-  }
-  bindRangeSimple(videoOpacity, () => video.style.opacity = String(videoOpacity.value));
-  bindRangeSimple(ytDim, () => ytDimOverlay.style.opacity = String(ytDim.value));
+  // Colors bindings
+  const bindColor = (el, labelEl) => {
+    const upd = () => labelEl.textContent = el.value.toLowerCase();
+    el.addEventListener('input', () => { upd(); render(); });
+    upd();
+  };
+  bindColor(prevColor, prevColorVal);
+  bindColor(nextColor, nextColorVal);
 
-  // Init defaults
+  // Init
   setTool('pen');
   setDrawEnabled(true);
   setInteractEnabled(false);
-
-  function init(){
-    setMode(Mode.NONE);
-    resizeCanvas();
-    updateButtons();
-    updateLoopSliderUI();
-  }
-  init();
+  setMode(Mode.NONE);
+  resizeCanvas();
+  updateLoopStatus();
+  updateStatus();
 })();
