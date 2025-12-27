@@ -1,0 +1,224 @@
+<!-- index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Arc Tracer — YouTube + Local</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Arc Tracer</h1>
+
+      <div class="group">
+        <label>YouTube URL (primary)</label>
+        <input id="ytUrl" type="text" placeholder="Paste a YouTube link…" />
+        <div class="btnRow">
+          <button id="loadYtBtn">Load YouTube</button>
+          <button id="unloadBtn">Unload</button>
+        </div>
+
+        <label class="mt12">Local video (optional)</label>
+        <input id="fileInput" type="file" accept="video/*" />
+
+        <div class="modeBadge" id="modeBadge">Mode: None</div>
+        <div class="hint">
+          YouTube shows overlays when paused. Use <b>Interact Mode</b> to click the X/close UI inside the iframe.
+          Shortcut: <span class="kbd">I</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <label>Playback / stepping</label>
+
+        <div class="row">
+          <label for="videoStepSec">Video step size (seconds)</label>
+          <div class="value"><span id="videoStepSecVal">0.25</span>s</div>
+        </div>
+        <input id="videoStepSec" type="range" min="0.05" max="2" step="0.05" value="0.25" />
+
+        <div class="row">
+          <label for="stepSec">Drawing slot size (seconds)</label>
+          <div class="value"><span id="stepSecVal">0.25</span>s</div>
+        </div>
+        <input id="stepSec" type="range" min="0.05" max="2" step="0.05" value="0.25" />
+
+        <div class="row">
+          <label for="rate">Playback rate</label>
+          <div class="value"><span id="rateVal">1.00</span>x</div>
+        </div>
+        <input id="rate" type="range" min="0.25" max="2" step="0.05" value="1" />
+
+        <div class="btnRow3">
+          <button id="backBtn">← Back</button>
+          <button id="playBtn">Play</button>
+          <button id="nextBtn">Next →</button>
+        </div>
+
+        <div class="btnRow">
+          <button id="stepPlayBtn">Step Play: Off</button>
+          <button id="holdBtn">Hold: Off</button>
+        </div>
+
+        <div class="btnRow">
+          <button id="snapToSlotBtn">Snap to Slot</button>
+          <button id="interactBtn">Interact: Off</button>
+        </div>
+
+        <div class="btnRow">
+          <button id="helpBtn">What’s this?</button>
+        </div>
+
+        <div class="pill">
+          <span class="kbd">Space</span> play/pause
+          <span class="kbd">←</span>/<span class="kbd">→</span> step
+          <span class="kbd">Shift</span> 4×
+          <span class="kbd">I</span> interact
+        </div>
+
+        <div class="hint" id="timeReadout">t=0.000s · slot=0.000s</div>
+      </div>
+
+      <div class="group">
+        <label>Loop</label>
+
+        <div id="loopBar" aria-label="Loop Range Slider">
+          <div id="loopRange"></div>
+          <div id="loopInHandle" class="loopHandle" title="Loop In"></div>
+          <div id="loopOutHandle" class="loopHandle" title="Loop Out"></div>
+          <div id="loopPlayhead" title="Playhead"></div>
+        </div>
+
+        <div class="btnRow3 mt10">
+          <button id="setInBtn">Set In</button>
+          <button id="setOutBtn">Set Out</button>
+          <button id="loopBtn">Loop: Off</button>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label for="loopIn">In (sec)</label>
+            <input id="loopIn" type="number" step="0.01" min="0" value="0.00" />
+          </div>
+          <div>
+            <label for="loopOut">Out (sec)</label>
+            <input id="loopOut" type="number" step="0.01" min="0" value="0.00" />
+          </div>
+        </div>
+
+        <div class="btnRow">
+          <button id="jumpInBtn">Jump In</button>
+          <button id="jumpOutBtn">Jump Out</button>
+        </div>
+
+        <div class="hint" id="loopStatus">Loop inactive.</div>
+      </div>
+
+      <div class="group">
+        <label>View</label>
+
+        <div class="row">
+          <label for="videoOpacity">Local video opacity</label>
+          <div class="value"><span id="videoOpacityVal">0.55</span></div>
+        </div>
+        <input id="videoOpacity" type="range" min="0" max="1" step="0.01" value="0.55" />
+
+        <div class="row">
+          <label for="ytDim">YouTube dim overlay</label>
+          <div class="value"><span id="ytDimVal">0.15</span></div>
+        </div>
+        <input id="ytDim" type="range" min="0" max="0.85" step="0.01" value="0.15" />
+      </div>
+
+      <div class="group">
+        <label>Drawing</label>
+
+        <div class="toolToggle">
+          <button id="toolPen" data-active="true">Pen</button>
+          <button id="toolPoint" data-active="false">Point</button>
+        </div>
+
+        <div class="btnRow3">
+          <button id="undoBtn">Undo</button>
+          <button id="clearBtn">Clear slot</button>
+          <button id="clearAllBtn">Clear All</button>
+        </div>
+
+        <div class="btnRow">
+          <button id="toggleDrawBtn">Draw: On</button>
+        </div>
+
+        <div class="row">
+          <label for="penSize">Pen size</label>
+          <div class="value"><span id="penSizeVal">3</span></div>
+        </div>
+        <input id="penSize" type="range" min="1" max="12" step="1" value="3" />
+
+        <div class="row">
+          <label for="pointSize">Point size</label>
+          <div class="value"><span id="pointSizeVal">4</span></div>
+        </div>
+        <input id="pointSize" type="range" min="1" max="20" step="1" value="4" />
+      </div>
+
+      <div class="group">
+        <label>Onion skin</label>
+
+        <div class="row">
+          <label for="onionPrev">Prev slots</label>
+          <div class="value"><span id="onionPrevVal">4</span></div>
+        </div>
+        <input id="onionPrev" type="range" min="0" max="24" step="1" value="4" />
+
+        <div class="row">
+          <label for="onionNext">Next slots</label>
+          <div class="value"><span id="onionNextVal">4</span></div>
+        </div>
+        <input id="onionNext" type="range" min="0" max="24" step="1" value="4" />
+
+        <div class="row">
+          <label for="prevColor">Prev color</label>
+          <div class="value"><span id="prevColorVal">#7aa2f7</span></div>
+        </div>
+        <input id="prevColor" type="color" value="#7aa2f7" />
+
+        <div class="row">
+          <label for="nextColor">Next color</label>
+          <div class="value"><span id="nextColorVal">#f7768e</span></div>
+        </div>
+        <input id="nextColor" type="color" value="#f7768e" />
+
+        <div class="row">
+          <label for="falloff">Falloff strength</label>
+          <div class="value"><span id="falloffVal">0.75</span></div>
+        </div>
+        <input id="falloff" type="range" min="0.1" max="1.0" step="0.01" value="0.75" />
+
+        <div class="row">
+          <label for="ghostMax">Max ghost opacity</label>
+          <div class="value"><span id="ghostMaxVal">0.35</span></div>
+        </div>
+        <input id="ghostMax" type="range" min="0" max="1.0" step="0.01" value="0.35" />
+
+        <div class="hint">
+          Ghost opacity controls the entire mark (fill + outline). At 0, ghosts are fully invisible.
+        </div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="viewer" id="viewer">
+        <div id="ytWrap"><div id="ytPlayer"></div></div>
+        <div class="ytDim" id="ytDimOverlay"></div>
+        <video id="video" playsinline muted></video>
+        <canvas id="canvas"></canvas>
+      </div>
+    </main>
+  </div>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
