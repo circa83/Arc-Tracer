@@ -26,31 +26,13 @@
 
         <div class="modeBadge" id="modeBadge">Mode: None</div>
         <div class="hint">
-          YouTube shows overlays when paused. Use <b>Interact Mode</b> to click the X/close UI inside the iframe.
+          YouTube shows overlays when paused. Use <b>Interact Mode</b> to click inside YouTube and close them.
           Shortcut: <span class="kbd">I</span>
         </div>
       </div>
 
       <div class="group">
-        <label>Playback / stepping</label>
-
-        <div class="row">
-          <label for="videoStepSec">Video step size (seconds)</label>
-          <div class="value"><span id="videoStepSecVal">0.25</span>s</div>
-        </div>
-        <input id="videoStepSec" type="range" min="0.05" max="2" step="0.05" value="0.25" />
-
-        <div class="row">
-          <label for="stepSec">Drawing slot size (seconds)</label>
-          <div class="value"><span id="stepSecVal">0.25</span>s</div>
-        </div>
-        <input id="stepSec" type="range" min="0.05" max="2" step="0.05" value="0.25" />
-
-        <div class="row">
-          <label for="rate">Playback rate</label>
-          <div class="value"><span id="rateVal">1.00</span>x</div>
-        </div>
-        <input id="rate" type="range" min="0.25" max="2" step="0.05" value="1" />
+        <label>Playback</label>
 
         <div class="btnRow3">
           <button id="backBtn">← Back</button>
@@ -60,15 +42,29 @@
 
         <div class="btnRow">
           <button id="stepPlayBtn">Step Play: Off</button>
-          <button id="holdBtn">Hold: Off</button>
-        </div>
-
-        <div class="btnRow">
-          <button id="snapToSlotBtn">Snap to Slot</button>
           <button id="interactBtn">Interact: Off</button>
         </div>
 
+        <div class="row">
+          <label for="videoSpeed">Video Speed (native)</label>
+          <div class="value"><span id="videoSpeedVal">1.00</span>x</div>
+        </div>
+        <input id="videoSpeed" type="range" min="0.1" max="2.0" step="0.05" value="1.0" />
+
+        <div class="row">
+          <label for="stepSec">Step Size (seconds)</label>
+          <div class="value"><span id="stepSecVal">0.25</span>s</div>
+        </div>
+        <input id="stepSec" type="range" min="0.02" max="2.0" step="0.01" value="0.25" />
+
+        <div class="row">
+          <label for="stepFps">Step FPS (steps/sec)</label>
+          <div class="value"><span id="stepFpsVal">12</span></div>
+        </div>
+        <input id="stepFps" type="range" min="1" max="60" step="1" value="12" />
+
         <div class="btnRow">
+          <button id="snapBtn">Snap to Step</button>
           <button id="helpBtn">What’s this?</button>
         </div>
 
@@ -79,7 +75,8 @@
           <span class="kbd">I</span> interact
         </div>
 
-        <div class="hint" id="timeReadout">t=0.000s · slot=0.000s</div>
+        <div class="hint" id="statusReadout">Video: — · Step Play: —</div>
+        <div class="hint" id="timeReadout">t=0.000s · step=0.000s</div>
       </div>
 
       <div class="group">
@@ -143,7 +140,7 @@
 
         <div class="btnRow3">
           <button id="undoBtn">Undo</button>
-          <button id="clearBtn">Clear slot</button>
+          <button id="clearBtn">Clear step</button>
           <button id="clearAllBtn">Clear All</button>
         </div>
 
@@ -168,13 +165,13 @@
         <label>Onion skin</label>
 
         <div class="row">
-          <label for="onionPrev">Prev slots</label>
+          <label for="onionPrev">Prev steps</label>
           <div class="value"><span id="onionPrevVal">4</span></div>
         </div>
         <input id="onionPrev" type="range" min="0" max="24" step="1" value="4" />
 
         <div class="row">
-          <label for="onionNext">Next slots</label>
+          <label for="onionNext">Next steps</label>
           <div class="value"><span id="onionNextVal">4</span></div>
         </div>
         <input id="onionNext" type="range" min="0" max="24" step="1" value="4" />
@@ -202,10 +199,6 @@
           <div class="value"><span id="ghostMaxVal">0.35</span></div>
         </div>
         <input id="ghostMax" type="range" min="0" max="1.0" step="0.01" value="0.35" />
-
-        <div class="hint">
-          Ghost opacity controls the entire mark (fill + outline). At 0, ghosts are fully invisible.
-        </div>
       </div>
     </aside>
 
