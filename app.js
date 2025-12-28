@@ -81,7 +81,7 @@
   const modeBadge = document.getElementById('modeBadge');
 
   // Mode + YouTube
-  const Mode = { NONE:'none', YT:'youtube', LOCAL:'local' };
+  const Mode = { NONE: 'none', YT: 'youtube', LOCAL: 'local' };
   let mode = Mode.NONE;
   let ytPlayer = null;
   let ytReady = false;
@@ -95,8 +95,6 @@
   let loopOut = 0;
 
   // Playback modes
-  // Native = actual video play (continuous).
-  // Step-play = discrete seek jumps at Step FPS.
   let stepPlayEnabled = false;
   let stepTimer = null;
   let lastStepMs = 0;
@@ -107,100 +105,105 @@
   let isDrawing = false;
   let currentStroke = null;
 
-  // stepKey -> {points, strokes}
-  const slots = new Map();
+  // -------------------------------
+  // NEW: timestamp-keyed drawings
+  // -------------------------------
+  // keyTime -> {points, strokes}
+  // keyTime is a Number with 3-decimal rounding (milliseconds-ish).
+  const keyframes = new Map();
+  let keyTimes = []; // sorted ascending
+
+  // how close (seconds) counts as "same keyframe" when adding new marks
+  const MERGE_EPS = 0.01; // 10ms
 
   // Utils
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
-  const roundTo = (n, step) => Math.round(n / step) * step;
+  const roundTime = (t) => Number((Math.max(0, t)).toFixed(3));
 
-  function getStepSec(){ return Number(stepSec.value); }
-  function getStepFps(){ return Number(stepFps.value); }
-  function getVideoSpeed(){ return Number(videoSpeed.value); }
-  function getPointRadius(){ return Number(pointSize.value); }
+  function getStepSec() { return Number(stepSec.value); }
+  function getStepFps() { return Number(stepFps.value); }
+  function getVideoSpeed() { return Number(videoSpeed.value); }
+  function getPointRadius() { return Number(pointSize.value); }
 
-  function isPlayable(){
+  function isPlayable() {
     if (mode === Mode.YT) return ytReady && ytPlayer;
     if (mode === Mode.LOCAL) return isFinite(video.duration);
     return false;
   }
-  function getCurrentTime(){
+  function getCurrentTime() {
     if (mode === Mode.YT && ytReady && ytPlayer) return ytPlayer.getCurrentTime() || 0;
     if (mode === Mode.LOCAL) return video.currentTime || 0;
     return 0;
   }
-  function getDuration(){
+  function getDuration() {
     if (mode === Mode.YT && ytReady && ytPlayer) return ytPlayer.getDuration() || 0;
     if (mode === Mode.LOCAL) return video.duration || 0;
     return 0;
   }
-  function seekTo(t){
+  function seekTo(t) {
     const dur = getDuration();
     const nt = Math.max(0, Math.min(dur || t, t));
     if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.seekTo(nt, true);
     if (mode === Mode.LOCAL) video.currentTime = nt;
   }
 
-  function isNativePlaying(){
+  function isNativePlaying() {
     if (!isPlayable()) return false;
     if (mode === Mode.LOCAL) return !video.paused;
     if (mode === Mode.YT && ytReady && ytPlayer) return ytPlayer.getPlayerState() === 1;
     return false;
   }
 
-  function pauseNative(){
+  function pauseNative() {
     if (!isPlayable()) return;
     if (mode === Mode.LOCAL) video.pause();
     if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.pauseVideo();
   }
-  function playNative(){
+  function playNative() {
     if (!isPlayable()) return;
-    // If native play starts, step-play must stop.
     stopStepPlay();
     if (mode === Mode.LOCAL) video.play();
     if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.playVideo();
   }
 
   // Loop helpers
-  function parseLoopInputs(){
+  function parseLoopInputs() {
     loopIn = Math.max(0, Number(loopInEl.value) || 0);
     loopOut = Math.max(0, Number(loopOutEl.value) || 0);
   }
-  function syncLoopInputs(){
+  function syncLoopInputs() {
     loopInEl.value = loopIn.toFixed(2);
     loopOutEl.value = loopOut.toFixed(2);
   }
-  function loopValid(){ return loopOut > loopIn + 0.001; }
-  function loopOutSafe(){
+  function loopValid() { return loopOut > loopIn + 0.001; }
+  function loopOutSafe() {
     if (!loopValid()) return loopOut;
     const eps = Math.min(0.02, Math.max(0.002, getStepSec() * 0.05));
     return Math.max(loopIn, loopOut - eps);
   }
-  function clampToLoop(t){
+  function clampToLoop(t) {
     if (!loopEnabled || !loopValid()) return t;
     if (t < loopIn) return loopIn;
     if (t >= loopOut) return loopOutSafe();
     return t;
   }
-  function enforceLoop(){
+  function enforceLoop() {
     if (!loopEnabled || !loopValid() || !isPlayable()) return;
     const t = getCurrentTime();
-    if (t >= loopOut - 0.0005){
-      seekTo(loopIn);
-    }
+    if (t >= loopOut - 0.0005) seekTo(loopIn);
   }
 
-  // UI Loop slider mapping
-  function timeToPct(t){
+  // Loop slider mapping
+  function timeToPct(t) {
     const d = getDuration() || 0;
     if (d <= 0) return 0;
     return Math.max(0, Math.min(1, t / d));
   }
-  function pctToTime(p){
+  function pctToTime(p) {
     const d = getDuration() || 0;
     return Math.max(0, Math.min(d, p * d));
   }
-  function updateLoopSliderUI(){
+  function updateLoopSliderUI() {
     const d = getDuration() || 0;
     if (d <= 0) return;
 
@@ -226,11 +229,11 @@
 
     loopPlayhead.style.left = `${tX}px`;
   }
-  function pointerPctFromEvent(e){
+  function pointerPctFromEvent(e) {
     const r = loopBar.getBoundingClientRect();
     return Math.max(0, Math.min(1, (e.clientX - r.left) / (r.width || 1)));
   }
-  function beginDrag(which, startEvent){
+  function beginDrag(which, startEvent) {
     startEvent.preventDefault();
     startEvent.stopPropagation();
 
@@ -243,9 +246,7 @@
       loopOutEl.value = loopOut.toFixed(2);
       updateLoopSliderUI();
       updateLoopStatus();
-      if (loopEnabled && loopValid()){
-        seekTo(clampToLoop(getCurrentTime()));
-      }
+      if (loopEnabled && loopValid()) seekTo(clampToLoop(getCurrentTime()));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -262,31 +263,74 @@
     updateLoopSliderUI();
   });
 
-  function updateLoopStatus(){
+  function updateLoopStatus() {
     if (!loopEnabled) { loopStatus.textContent = 'Loop inactive.'; return; }
     if (!loopValid()) { loopStatus.textContent = 'Loop ON but invalid (Out must be > In).'; return; }
     loopStatus.textContent = `Looping: ${loopIn.toFixed(2)}s → ${loopOut.toFixed(2)}s`;
   }
 
-  // Unified step grid for drawings
-  function stepTimeFromT(t){
-    const s = getStepSec();
-    const st = roundTo(Math.max(0, t), s);
-    return Number(st.toFixed(3));
+  // -------------------------------
+  // Keyframe helpers (time-based)
+  // -------------------------------
+  function rebuildKeyTimes() {
+    keyTimes = Array.from(keyframes.keys()).sort((a, b) => a - b);
   }
-  function slotKey(st){ return st.toFixed(3); }
-  function ensureSlot(st){
-    const k = slotKey(st);
-    if (!slots.has(k)) slots.set(k, { points: [], strokes: [] });
-    return slots.get(k);
+
+  function findNearestKeyTime(t) {
+    if (keyTimes.length === 0) return null;
+    // binary search for nearest
+    let lo = 0, hi = keyTimes.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = keyTimes[mid];
+      if (v < t) lo = mid + 1;
+      else if (v > t) hi = mid - 1;
+      else return v;
+    }
+    const left = keyTimes[Math.max(0, hi)];
+    const right = keyTimes[Math.min(keyTimes.length - 1, lo)];
+    if (left == null) return right;
+    if (right == null) return left;
+    return (Math.abs(t - left) <= Math.abs(right - t)) ? left : right;
   }
-  function currentSlot(){ return stepTimeFromT(getCurrentTime()); }
+
+  function findActiveKeyIndex(t) {
+    // active = latest keyTime <= t
+    if (keyTimes.length === 0) return -1;
+    let lo = 0, hi = keyTimes.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = keyTimes[mid];
+      if (v <= t) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return hi; // may be -1
+  }
+
+  function ensureKeyframeAtTime(t) {
+    const rt = roundTime(t);
+
+    // merge into an existing keyframe if very close
+    const nearest = findNearestKeyTime(rt);
+    if (nearest != null && Math.abs(nearest - rt) <= MERGE_EPS) {
+      return nearest;
+    }
+
+    if (!keyframes.has(rt)) {
+      keyframes.set(rt, { points: [], strokes: [] });
+      rebuildKeyTimes();
+    }
+    return rt;
+  }
+
+  function getKeyframe(timeKey) {
+    return keyframes.get(timeKey) || null;
+  }
 
   // Step / Seek controls (manual)
-  function stepAdvance(delta){
+  function stepAdvance(delta) {
     if (!isPlayable()) return;
 
-    // Manual step should stop BOTH play modes, then seek.
     stopStepPlay();
     pauseNative();
 
@@ -294,7 +338,7 @@
     let nt = t + delta;
     const eps = 0.002;
 
-    if (loopEnabled && loopValid()){
+    if (loopEnabled && loopValid()) {
       if (delta < 0 && t <= loopIn + eps) nt = loopOutSafe();
       else if (delta > 0 && t >= loopOut - eps) nt = loopIn;
       else {
@@ -312,10 +356,9 @@
     updateStatus();
   }
 
-  // Step play (discrete stepping at Step FPS)
-  function startStepPlay(){
+  // Step play (seek-jump at Step FPS; step size ONLY affects seek distance)
+  function startStepPlay() {
     if (!isPlayable()) return;
-    // Step play owns the timeline: native playback must be paused.
     pauseNative();
 
     stepPlayEnabled = true;
@@ -327,15 +370,15 @@
     const tick = (now) => {
       if (!stepPlayEnabled) return;
 
-      const intervalMs = 1000 / Math.max(1, getStepFps()); // frame-rate style
-      if (now - lastStepMs >= intervalMs){
+      const intervalMs = 1000 / Math.max(1, getStepFps());
+      if (now - lastStepMs >= intervalMs) {
         lastStepMs = now;
-        // advance exactly one step per tick
+
         const s = getStepSec();
         const t = getCurrentTime();
         let nt = t + s;
 
-        if (loopEnabled && loopValid()){
+        if (loopEnabled && loopValid()) {
           if (t >= loopOut - 0.0005) nt = loopIn;
           if (nt >= loopOut) nt = loopIn;
           nt = clampToLoop(nt);
@@ -355,31 +398,32 @@
     updateStatus();
   }
 
-  function stopStepPlay(){
+  function stopStepPlay() {
     stepPlayEnabled = false;
     stepPlayBtn.textContent = 'Step Play: Off';
-    if (stepTimer){
+    if (stepTimer) {
       cancelAnimationFrame(stepTimer);
       stepTimer = null;
     }
     updateStatus();
   }
 
-  function toggleStepPlay(){
+  function toggleStepPlay() {
     if (!isPlayable()) return;
     if (stepPlayEnabled) stopStepPlay();
     else startStepPlay();
   }
 
   // Interact mode
-  function setInteractEnabled(on){
+  let interactEnabledLocal = false; // (kept as original var name)
+  function setInteractEnabled(on) {
     interactEnabled = on;
     canvas.style.pointerEvents = interactEnabled ? 'none' : 'auto';
     interactBtn.textContent = `Interact: ${interactEnabled ? 'On' : 'Off'}`;
     toggleDrawBtn.textContent = `Draw: ${(!interactEnabled && drawEnabled) ? 'On' : 'Off'}`;
   }
 
-  function updateStatus(){
+  function updateStatus() {
     const v = isNativePlaying() ? 'Playing' : 'Paused';
     const sp = stepPlayEnabled ? 'On' : 'Off';
     statusReadout.textContent = `Video: ${v} · Step Play: ${sp}`;
@@ -387,11 +431,10 @@
   }
 
   // Bind UI
-  function bindRange(rangeEl, labelEl, fmt=(v)=>v){
+  function bindRange(rangeEl, labelEl, fmt = (v) => v) {
     const upd = () => labelEl.textContent = fmt(rangeEl.value);
     rangeEl.addEventListener('input', () => {
       upd();
-      // If step FPS changes while stepping, it just affects next tick rate automatically.
       render();
       updateLoopSliderUI();
       updateStatus();
@@ -417,7 +460,7 @@
   ytDimOverlay.style.opacity = String(ytDim.value);
 
   // Tools
-  function setTool(nextTool){
+  function setTool(nextTool) {
     tool = nextTool;
     toolPen.dataset.active = (tool === 'pen');
     toolPoint.dataset.active = (tool === 'point');
@@ -425,7 +468,7 @@
   toolPen.addEventListener('click', () => setTool('pen'));
   toolPoint.addEventListener('click', () => setTool('point'));
 
-  function setDrawEnabled(on){
+  function setDrawEnabled(on) {
     drawEnabled = on;
     if (!interactEnabled) toggleDrawBtn.textContent = `Draw: ${drawEnabled ? 'On' : 'Off'}`;
   }
@@ -440,12 +483,10 @@
 
   playBtn.addEventListener('click', () => {
     if (!isPlayable()) return;
-    if (isNativePlaying()){
+    if (isNativePlaying()) {
       pauseNative();
     } else {
-      // Native play takes control: stop step-play first, then play.
       stopStepPlay();
-      // Apply speed to native playback only.
       if (mode === Mode.LOCAL) video.playbackRate = getVideoSpeed();
       if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(getVideoSpeed());
       playNative();
@@ -456,20 +497,20 @@
   stepPlayBtn.addEventListener('click', toggleStepPlay);
   interactBtn.addEventListener('click', () => setInteractEnabled(!interactEnabled));
 
-  // When videoSpeed changes, apply it to native playback immediately (if playing)
   videoSpeed.addEventListener('input', () => {
     if (!isPlayable()) return;
     if (mode === Mode.LOCAL) video.playbackRate = getVideoSpeed();
     if (mode === Mode.YT && ytReady && ytPlayer) ytPlayer.setPlaybackRate(getVideoSpeed());
   });
 
-  // Snap to step
+  // Snap to current time: (now it just stops motion; no re-binning)
   snapBtn.addEventListener('click', () => {
     if (!isPlayable()) return;
     stopStepPlay();
     pauseNative();
-    const st = stepTimeFromT(getCurrentTime());
-    seekTo(loopEnabled && loopValid() ? clampToLoop(st) : st);
+    // keep current time (but clamp to loop)
+    const t = getCurrentTime();
+    seekTo(loopEnabled && loopValid() ? clampToLoop(t) : t);
     render();
     updateLoopSliderUI();
     updateStatus();
@@ -477,25 +518,20 @@
 
   helpBtn.addEventListener('click', () => {
     alert(
-      "Two playback modes:\n\n" +
-      "Play/Pause:\n" +
-      "• Native continuous video playback.\n" +
-      "• Controlled by Video Speed.\n\n" +
-      "Step Play:\n" +
-      "• Discrete 'seek-jump' playback.\n" +
-      "• Step Size = how far each jump goes.\n" +
-      "• Step FPS = how many jumps per second (like frame rate).\n\n" +
-      "They are mutually exclusive: starting one stops the other."
+      "Drawings are keyed to absolute timestamps.\n\n" +
+      "Step Size only controls how far you seek when stepping.\n" +
+      "Current drawing is the latest drawing keyframe at or before the current video time.\n" +
+      "Onion skin shows neighboring drawing keyframes (prev/next)."
     );
   });
 
   // Loop controls
-  function setLoopEnabled(on){
+  function setLoopEnabled(on) {
     loopEnabled = on;
     parseLoopInputs();
 
     const d = getDuration() || 0;
-    if (d > 0){
+    if (d > 0) {
       loopIn = Math.max(0, Math.min(d, loopIn));
       loopOut = Math.max(0, Math.min(d, loopOut));
       syncLoopInputs();
@@ -503,7 +539,7 @@
     updateLoopStatus();
     updateLoopSliderUI();
 
-    if (loopEnabled && loopValid() && isPlayable()){
+    if (loopEnabled && loopValid() && isPlayable()) {
       seekTo(clampToLoop(getCurrentTime()));
     }
   }
@@ -531,21 +567,21 @@
   jumpOutBtn.addEventListener('click', () => { parseLoopInputs(); seekTo(loopOutSafe()); updateLoopSliderUI(); });
 
   // Drawing + onion skin
-  function alphaForDistance(dist){
+  function alphaForDistance(dist) {
     const base = Number(ghostMax.value);
     const f = Number(falloff.value);
     return Math.max(0, Math.min(1, base * Math.pow(f, dist - 1)));
   }
-  function normToViewerPx(p){
+  function normToViewerPx(p) {
     const r = viewer.getBoundingClientRect();
     return { x: p.x * r.width, y: p.y * r.height };
   }
-  function viewerPointToNorm(clientX, clientY){
+  function viewerPointToNorm(clientX, clientY) {
     const r = viewer.getBoundingClientRect();
     return { x: clamp01((clientX - r.left) / r.width), y: clamp01((clientY - r.top) / r.height) };
   }
 
-  function drawPoint(p, alpha, colorHex){
+  function drawPoint(p, alpha, colorHex) {
     if (alpha <= 0.001) return;
     const px = normToViewerPx(p);
     const radius = getPointRadius();
@@ -561,7 +597,8 @@
     ctx.stroke();
     ctx.restore();
   }
-  function drawStroke(stroke, alpha, colorHex){
+
+  function drawStroke(stroke, alpha, colorHex) {
     if (alpha <= 0.001) return;
     if (!stroke.pts || stroke.pts.length < 2) return;
 
@@ -575,7 +612,7 @@
     ctx.beginPath();
     const p0 = normToViewerPx(stroke.pts[0]);
     ctx.moveTo(p0.x, p0.y);
-    for (let i=1;i<stroke.pts.length;i++){
+    for (let i = 1; i < stroke.pts.length; i++) {
       const pi = normToViewerPx(stroke.pts[i]);
       ctx.lineTo(pi.x, pi.y);
     }
@@ -587,47 +624,63 @@
     ctx.restore();
   }
 
-  function render(){
+  function render() {
     const r = viewer.getBoundingClientRect();
-    ctx.clearRect(0,0,r.width,r.height);
+    ctx.clearRect(0, 0, r.width, r.height);
 
     const t = getCurrentTime();
-    const st = stepTimeFromT(t);
-    timeReadout.textContent = `t=${t.toFixed(3)}s · step=${st.toFixed(3)}s`;
+    const rt = roundTime(t);
+
+    const activeIdx = findActiveKeyIndex(rt);
+    const activeTime = activeIdx >= 0 ? keyTimes[activeIdx] : null;
+
+    timeReadout.textContent =
+      activeTime != null
+        ? `t=${t.toFixed(3)}s · active drawing @ ${activeTime.toFixed(3)}s`
+        : `t=${t.toFixed(3)}s · active drawing @ —`;
 
     if (!isPlayable()) return;
 
-    const s = getStepSec();
     const prevCount = Number(onionPrev.value);
     const nextCount = Number(onionNext.value);
     const prevHex = prevColor.value;
     const nextHex = nextColor.value;
 
-    for (let d=prevCount; d>=1; d--){
-      const pst = Math.max(0, st - d*s);
-      const data = slots.get(slotKey(Number(pst.toFixed(3))));
+    // Prev keyframes (based on keyTimes, not step buckets)
+    for (let d = prevCount; d >= 1; d--) {
+      const idx = activeIdx - d;
+      if (idx < 0) continue;
+      const k = keyTimes[idx];
+      const data = getKeyframe(k);
       if (!data) continue;
       const a = alphaForDistance(d);
       for (const st of data.strokes) drawStroke(st, a, prevHex);
       for (const p of data.points) drawPoint(p, a, prevHex);
     }
 
-    for (let d=1; d<=nextCount; d++){
-      const nst = st + d*s;
-      const data = slots.get(slotKey(Number(nst.toFixed(3))));
+    // Next keyframes
+    for (let d = 1; d <= nextCount; d++) {
+      const idx = activeIdx + d;
+      if (idx < 0 || idx >= keyTimes.length) continue;
+      const k = keyTimes[idx];
+      const data = getKeyframe(k);
       if (!data) continue;
       const a = alphaForDistance(d);
       for (const st of data.strokes) drawStroke(st, a, nextHex);
       for (const p of data.points) drawPoint(p, a, nextHex);
     }
 
-    const cur = slots.get(slotKey(st));
-    if (cur){
-      for (const st of cur.strokes) drawStroke(st, 1, '#ffffff');
-      for (const p of cur.points) drawPoint(p, 1, '#ffffff');
+    // Current keyframe
+    if (activeTime != null) {
+      const cur = getKeyframe(activeTime);
+      if (cur) {
+        for (const st of cur.strokes) drawStroke(st, 1, '#ffffff');
+        for (const p of cur.points) drawPoint(p, 1, '#ffffff');
+      }
     }
 
-    if (currentStroke && currentStroke.pts.length > 1){
+    // In-progress stroke
+    if (currentStroke && currentStroke.pts.length > 1) {
       drawStroke(currentStroke, 1, '#ffffff');
     }
   }
@@ -639,17 +692,18 @@
 
     canvas.setPointerCapture(e.pointerId);
     const p = viewerPointToNorm(e.clientX, e.clientY);
-    const st = currentSlot();
-    const data = ensureSlot(st);
 
-    if (tool === 'point'){
+    const k = ensureKeyframeAtTime(getCurrentTime());
+    const data = keyframes.get(k);
+
+    if (tool === 'point') {
       data.points.push(p);
       render();
       return;
     }
 
     isDrawing = true;
-    currentStroke = { size: Number(penSize.value), pts: [p] };
+    currentStroke = { size: Number(penSize.value), pts: [p], timeKey: k };
     render();
   });
 
@@ -663,18 +717,21 @@
     const last = pts[pts.length - 1];
     const dx = p.x - last.x;
     const dy = p.y - last.y;
-    if (dx*dx + dy*dy < 0.00002) return;
+    if (dx * dx + dy * dy < 0.00002) return;
 
     pts.push(p);
     render();
   });
 
-  function commitStroke(){
+  function commitStroke() {
     if (!currentStroke) { isDrawing = false; return; }
     if (currentStroke.pts.length < 2) { currentStroke = null; isDrawing = false; return; }
-    const st = currentSlot();
-    const data = ensureSlot(st);
-    data.strokes.push(currentStroke);
+
+    const k = currentStroke.timeKey ?? ensureKeyframeAtTime(getCurrentTime());
+    const data = keyframes.get(k) || ensureKeyframeAtTime(k);
+
+    keyframes.get(k).strokes.push({ size: currentStroke.size, pts: currentStroke.pts });
+
     currentStroke = null;
     isDrawing = false;
     render();
@@ -685,33 +742,49 @@
 
   // Undo/Clear
   undoBtn.addEventListener('click', () => {
-    if (!isPlayable()) return;
-    const st = currentSlot();
-    const data = slots.get(slotKey(st));
+    const t = roundTime(getCurrentTime());
+    const idx = findActiveKeyIndex(t);
+    if (idx < 0) return;
+
+    const k = keyTimes[idx];
+    const data = keyframes.get(k);
     if (!data) return;
+
     if (data.strokes.length) data.strokes.pop();
     else if (data.points.length) data.points.pop();
+
+    // if empty, delete keyframe entirely
+    if (data.strokes.length === 0 && data.points.length === 0) {
+      keyframes.delete(k);
+      rebuildKeyTimes();
+    }
+
     render();
   });
 
   clearBtn.addEventListener('click', () => {
-    if (!isPlayable()) return;
-    slots.delete(slotKey(currentSlot()));
+    const t = roundTime(getCurrentTime());
+    const idx = findActiveKeyIndex(t);
+    if (idx < 0) return;
+    const k = keyTimes[idx];
+    keyframes.delete(k);
+    rebuildKeyTimes();
     render();
   });
 
   clearAllBtn.addEventListener('click', () => {
-    slots.clear();
+    keyframes.clear();
+    keyTimes = [];
     render();
   });
 
   // Resize canvas
-  function resizeCanvas(){
+  function resizeCanvas() {
     const rect = viewer.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     render();
     updateLoopSliderUI();
   }
@@ -723,19 +796,18 @@
     const isTypingField =
       t &&
       ((t.tagName === 'TEXTAREA') ||
-        (t.tagName === 'INPUT' && ['text','search','url','email','number','password'].includes(t.type)) ||
+        (t.tagName === 'INPUT' && ['text', 'search', 'url', 'email', 'number', 'password'].includes(t.type)) ||
         t.isContentEditable);
-
     if (isTypingField) return;
 
-    if (e.code === 'Space' || e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'KeyI'){
+    if (e.code === 'Space' || e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'KeyI') {
       e.preventDefault();
       e.stopPropagation();
     }
 
-    if (e.code === 'KeyI'){ setInteractEnabled(!interactEnabled); return; }
-    if (e.code === 'Space'){
-      // Space toggles NATIVE play (not step-play)
+    if (e.code === 'KeyI') { setInteractEnabled(!interactEnabled); return; }
+
+    if (e.code === 'Space') {
       if (isNativePlaying()) pauseNative();
       else {
         stopStepPlay();
@@ -747,12 +819,12 @@
       return;
     }
 
-    if (e.code === 'ArrowLeft'){
+    if (e.code === 'ArrowLeft') {
       const mult = e.shiftKey ? 4 : 1;
       stepAdvance(-getStepSec() * mult);
       return;
     }
-    if (e.code === 'ArrowRight'){
+    if (e.code === 'ArrowRight') {
       const mult = e.shiftKey ? 4 : 1;
       stepAdvance(getStepSec() * mult);
       return;
@@ -760,17 +832,17 @@
   }, true);
 
   // Mode switching
-  function setMode(next){
+  function setMode(next) {
     stopStepPlay();
     pauseNative();
     mode = next;
 
-    if (mode === Mode.YT){
+    if (mode === Mode.YT) {
       ytWrap.style.display = 'block';
       ytDimOverlay.style.display = 'block';
       video.style.display = 'none';
       modeBadge.textContent = 'Mode: YouTube';
-    } else if (mode === Mode.LOCAL){
+    } else if (mode === Mode.LOCAL) {
       ytWrap.style.display = 'none';
       ytDimOverlay.style.display = 'none';
       video.style.display = 'block';
@@ -795,7 +867,8 @@
     ytReady = false;
 
     stopStepPlay();
-    slots.clear();
+    keyframes.clear();
+    keyTimes = [];
 
     const url = URL.createObjectURL(file);
     video.src = url;
@@ -812,8 +885,6 @@
     setMode(Mode.LOCAL);
   });
 
-  // Local loop enforcement
-  video.addEventListener('timeupdate', () => { enforceLoop(); updateLoopSliderUI(); render(); updateStatus(); });
   video.addEventListener('loadedmetadata', () => {
     loopIn = 0;
     loopOut = video.duration || 0;
@@ -827,10 +898,26 @@
     updateStatus();
   });
 
+  // Local native playback: keep drawings in perfect sync
+  function rafLocalLoop() {
+    if (mode === Mode.LOCAL && isPlayable()) {
+      if (!video.paused) {
+        enforceLoop();
+        updateLoopSliderUI();
+        render();
+        updateStatus();
+      }
+    }
+    requestAnimationFrame(rafLocalLoop);
+  }
+  requestAnimationFrame(rafLocalLoop);
+
   // Unload
   unloadBtn.addEventListener('click', () => {
     stopStepPlay();
-    slots.clear();
+    keyframes.clear();
+    keyTimes = [];
+
     loopEnabled = false;
     loopBtn.textContent = 'Loop: Off';
     updateLoopStatus();
@@ -845,7 +932,7 @@
   });
 
   // YouTube
-  function extractYouTubeId(input){
+  function extractYouTubeId(input) {
     const s = (input || '').trim();
     if (!s) return null;
     try {
@@ -857,12 +944,12 @@
         if (id) return id;
         const parts = u.pathname.split('/').filter(Boolean);
         const si = parts.indexOf('shorts');
-        if (si >= 0 && parts[si+1]) return parts[si+1];
+        if (si >= 0 && parts[si + 1]) return parts[si + 1];
       }
-    } catch {}
+    } catch { }
     return null;
   }
-  function ensureYouTubeApi(){
+  function ensureYouTubeApi() {
     return new Promise((resolve) => {
       if (window.YT && window.YT.Player) return resolve();
       const tag = document.createElement('script');
@@ -872,14 +959,15 @@
     });
   }
 
-  async function loadYouTube(url){
+  async function loadYouTube(url) {
     const id = extractYouTubeId(url);
     if (!id) { alert('Could not parse YouTube ID.'); return; }
 
     await ensureYouTubeApi();
 
     stopStepPlay();
-    slots.clear();
+    keyframes.clear();
+    keyTimes = [];
     ytReady = false;
 
     // clear local
@@ -889,7 +977,7 @@
 
     setMode(Mode.YT);
 
-    if (ytPlayer) { try { ytPlayer.destroy(); } catch {} ytPlayer = null; }
+    if (ytPlayer) { try { ytPlayer.destroy(); } catch { } ytPlayer = null; }
 
     ytPlayer = new YT.Player('ytPlayer', {
       videoId: id,
@@ -913,9 +1001,7 @@
           loopBtn.textContent = 'Loop: Off';
           updateLoopStatus();
 
-          // Set native speed default
           ytPlayer.setPlaybackRate(getVideoSpeed());
-
           ytPlayer.seekTo(0, true);
           ytPlayer.pauseVideo();
 
@@ -924,7 +1010,6 @@
           updateStatus();
         },
         onStateChange: () => {
-          // Keep loop enforcement for native play via RAF
           updateStatus();
         }
       }
@@ -934,8 +1019,8 @@
   loadYtBtn.addEventListener('click', () => loadYouTube(ytUrl.value));
 
   // RAF loop for YouTube loop enforcement + UI updates
-  function rafLoop(){
-    if (mode === Mode.YT && isPlayable()){
+  function rafLoop() {
+    if (mode === Mode.YT && isPlayable()) {
       enforceLoop();
       updateLoopSliderUI();
     }
